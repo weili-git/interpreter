@@ -57,11 +57,24 @@ class Lexer:
             self.advance()
             return Token('OP', ch)
 
+        if self.ch == '(':
+            self.advance()
+            return Token('(', None)
+
+        if self.ch == ')':
+            self.advance()
+            return Token(')', None)
+
         raise Exception("Invalid Token")
 
 
 class Parser:
     def __init__(self, text):
+        """
+            expr: term((+|-)term)*
+            term: factor((*|/)factor)*
+            factor: INT | LPAREN expr RPAREN
+        """
         self.lex = Lexer(text)
         self.token = self.lex.next_token()
 
@@ -84,8 +97,14 @@ class Parser:
 
     def factor(self):
         token = self.token
-        self.eat('INT')
-        return token.value
+        if token.type == 'INT':
+            self.eat('INT')
+            return token.value
+        elif token.type == '(':
+            self.eat('(')
+            result = self.expr()
+            self.eat(')')
+            return result
 
     def operator(self):
         token = self.token
@@ -100,7 +119,6 @@ class Parser:
                 result += self.term()
             if op == '-':
                 result -= self.term()
-        self.eat('EOF')
         return result
 
 
@@ -116,6 +134,7 @@ def main():
             break
         interpreter = Parser(text)
         result = interpreter.expr()
+        interpreter.eat('EOF')
         print(result)
 
 
