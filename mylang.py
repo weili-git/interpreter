@@ -18,8 +18,8 @@ class Lexer:
         self.text = text
         self.pos = 0
         self.read_pos = 0
-        self.keywords = {}
-        self.symbols = ['+', '-', '*', '/']
+        self.keywords = {'def', 'end', 'if', 'else', 'pass'}
+        self.symbols = ['+', '-', '*', '/', '**', '=', '==', ';']
         self.ch = self.text[self.pos]
 
     def advance(self):
@@ -32,6 +32,20 @@ class Lexer:
     def skip_whitespace(self):
         while self.pos < len(self.text) and self.ch.isspace():
             self.advance()
+
+    def peek(self):
+        peek_pos = self.pos + 1
+        if peek_pos > len(self.text) - 1:
+            return None
+        else:
+            return self.text[peek_pos]
+
+    def identifier(self):
+        result = ''
+        while self.pos < len(self.text) and self.ch.isalnum():  # alphabet and number
+            result += self.ch
+            self.advance()
+        return Token('IDENT', result)
 
     def integer(self):
         result = ''     # str -> int
@@ -48,12 +62,20 @@ class Lexer:
 
         self.ch = self.text[self.pos]
 
+        if self.ch.isalpha():
+            return self.identifier()
+
         if self.ch.isdigit():
             token = Token('INT', self.integer())
             return token
 
         if self.ch in self.symbols:
             ch = self.ch
+            next = self.peek()
+            if next and "" + ch + next in self.symbols:
+                self.advance()
+                self.advance()
+                return Token('OP', "" + ch + next)
             self.advance()
             return Token('OP', ch)
 
@@ -91,13 +113,30 @@ class Num(AST):
         self.value = token.value
 
 
+class Program(AST):
+    def __init__(self, statements: list):
+        self.statements = statements
+
+
+class NoOp(AST):
+    pass
+
+
+class Assign(AST):
+    def __init__(self, left, op, right):
+        self.left = left
+        self.token = self.op = op
+        self.right = right
+
+
+class Var(AST):
+    def __init__(self, token):
+        self.token = token
+        self.value = token.value
+
+
 class Parser:
     def __init__(self, text):
-        """
-            expr: term((+|-)term)*
-            term: factor((*|/)factor)*
-            factor: INT | LPAREN expr RPAREN
-        """
         self.lex = Lexer(text)
         self.token = self.lex.next_token()
 
@@ -129,6 +168,8 @@ class Parser:
             self.eat('OP')
             node = UnaryOp(op=token, expr=self.expr())
             return node
+        elif token.type == 'IDENT':
+            return self.variable()
 
     def operator(self):
         token = self.token
@@ -142,11 +183,47 @@ class Parser:
             node = BinOp(left=node, op=op, right=self.term())
         return node
 
+    def program(self):
+        node = self.statement()
+        results = [node]
+        while self.token.value == ';':
+            self.eat('OP')  # check ; already
+            if self.token:
+                results.append(self.statement())
+        self.eat('EOF')
+        return Program(results)
+
+    def statement(self):
+        if self.token.type == 'IDENT':
+            return self.assignment()
+        elif self.token.type == 'INT':
+            return self.expr()
+        else:
+            return self.empty()     # important
+
+    def empty(self):
+        return NoOp()
+
+    def assignment(self):
+        left = self.variable()
+        op = self.token
+        if op.value == '=':
+            self.eat('OP')
+            right = self.expr()
+            return Assign(left, op, right)
+        raise Exception("Invalid Syntax: expected =, got " + op.value)
+
+    def variable(self):
+        node = Var(self.token)
+        self.eat('IDENT')
+        return node
+
 
 class NodeVisitor(object):
     def visit(self, node):
         method_name = 'visit_' + type(node).__name__    # visit_BinOp ~ visit_UnaryOp
         visitor = getattr(self, method_name, self.generic_visit)
+        # print(method_name)
         return visitor(node)
 
     def generic_visit(self, node):
@@ -156,6 +233,7 @@ class NodeVisitor(object):
 class Interpreter(NodeVisitor):
     def __init__(self, text):
         self.parser = Parser(text)
+        self.GLOBAL_SCOPE = {}
 
     def visit_BinOp(self, node):
         if node.op.value == '+':
@@ -166,6 +244,8 @@ class Interpreter(NodeVisitor):
             return self.visit(node.left) * self.visit(node.right)
         elif node.op.value == '/':
             return self.visit(node.left) / self.visit(node.right)
+        # elif node.op.value == '**':
+        #     return self.visit(node.left) ** self.visit(node.right)
 
     def visit_UnaryOp(self, node):
         op = node.op.value
@@ -177,9 +257,28 @@ class Interpreter(NodeVisitor):
     def visit_Num(self, node):
         return node.value
 
+    def visit_Program(self, node):
+        for statement in node.statements:
+            print(self.visit(statement))
+
+    def visit_NoOp(self, node): # dummy node
+        return "End of the program"
+
+    def visit_Assign(self, node):
+        var_name = node.left.value
+        self.GLOBAL_SCOPE[var_name] = self.visit(node.right)
+        return "Assign '{}' with {}".format(var_name, self.GLOBAL_SCOPE[var_name])
+
+    def visit_Var(self, node):
+        var_name = node.value
+        val = self.GLOBAL_SCOPE.get(var_name)
+        if val is None:
+            raise NameError(repr(var_name))
+        else:
+            return val
+
     def interpret(self):
-        tree = self.parser.expr()
-        self.parser.eat('EOF')
+        tree = self.parser.program()
         return self.visit(tree)
 
 
@@ -195,7 +294,6 @@ def main():
             break
         interpreter = Interpreter(text)
         result = interpreter.interpret()
-        print(result)
 
 
 if __name__ == '__main__':
