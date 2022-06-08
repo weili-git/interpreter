@@ -68,6 +68,29 @@ class Lexer:
         raise Exception("Invalid Token")
 
 
+class AST:
+    pass
+
+
+class BinOp(AST):
+    def __init__(self, left, op, right):
+        self.left = left
+        self.token = self.op = op
+        self.right = right
+
+
+class UnaryOp(AST):
+    def __init__(self, op, expr):
+        self.op = op
+        self.expr = expr
+
+
+class Num(AST):
+    def __init__(self, token):
+        self.token = token
+        self.value = token.value
+
+
 class Parser:
     def __init__(self, text):
         """
@@ -86,40 +109,78 @@ class Parser:
             raise Exception("Invalid Syntax: expected %s, got %s" % (token_type, self.token.type))
 
     def term(self):
-        result = self.factor()
+        node = self.factor()
         while self.token.value in ['*', '/']:
             op = self.operator()
-            if op == '*':
-                result *= self.factor()
-            if op == '/':
-                result /= self.factor()
-        return result
+            node = BinOp(left=node, op=op, right=self.factor())
+        return node
 
     def factor(self):
         token = self.token
         if token.type == 'INT':
             self.eat('INT')
-            return token.value
+            return Num(token)
         elif token.type == '(':
             self.eat('(')
-            result = self.expr()
+            node = self.expr()
             self.eat(')')
-            return result
+            return node
+        elif token.value in ['+', '-']:
+            self.eat('OP')
+            node = UnaryOp(op=token, expr=self.expr())
+            return node
 
     def operator(self):
         token = self.token
         self.eat('OP')
-        return token.value
+        return token
 
     def expr(self):
-        result = self.term()
+        node = self.term()
         while self.token.value in ['+', '-']:
             op = self.operator()
-            if op == '+':
-                result += self.term()
-            if op == '-':
-                result -= self.term()
-        return result
+            node = BinOp(left=node, op=op, right=self.term())
+        return node
+
+
+class NodeVisitor(object):
+    def visit(self, node):
+        method_name = 'visit_' + type(node).__name__    # visit_BinOp ~ visit_UnaryOp
+        visitor = getattr(self, method_name, self.generic_visit)
+        return visitor(node)
+
+    def generic_visit(self, node):
+        raise Exception('No visit_{} method'.format(type(node).__name__))
+
+
+class Interpreter(NodeVisitor):
+    def __init__(self, text):
+        self.parser = Parser(text)
+
+    def visit_BinOp(self, node):
+        if node.op.value == '+':
+            return self.visit(node.left) + self.visit(node.right)
+        elif node.op.value == '-':
+            return self.visit(node.left) - self.visit(node.right)
+        elif node.op.value == '*':
+            return self.visit(node.left) * self.visit(node.right)
+        elif node.op.value == '/':
+            return self.visit(node.left) / self.visit(node.right)
+
+    def visit_UnaryOp(self, node):
+        op = node.op.value
+        if op == '+':
+            return +self.visit(node.expr)
+        if op == '-':
+            return -self.visit(node.expr)
+
+    def visit_Num(self, node):
+        return node.value
+
+    def interpret(self):
+        tree = self.parser.expr()
+        self.parser.eat('EOF')
+        return self.visit(tree)
 
 
 def main():
@@ -132,9 +193,8 @@ def main():
             continue
         if text == 'q':
             break
-        interpreter = Parser(text)
-        result = interpreter.expr()
-        interpreter.eat('EOF')
+        interpreter = Interpreter(text)
+        result = interpreter.interpret()
         print(result)
 
 
