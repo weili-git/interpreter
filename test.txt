@@ -1,0 +1,4 @@
+a = 1;
+1+a;
+a="hello world!\naaa";
+"**"+a;
