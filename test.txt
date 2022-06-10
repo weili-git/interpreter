@@ -1,4 +1,10 @@
-a = 1;
-1+a;
-a="hello world!\naaa";
-"**"+a;
+
+def foo1(a, b, c)
+    a=1; b=2
+    c=3
+end
+a = 1
+a + 1
+a = "hello world!\naaa" # aaa
+foo1()
+"**" + a;;;

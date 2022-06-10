@@ -18,7 +18,7 @@ class Lexer:
         self.text = text
         self.pos = 0
         self.ch = self.text[self.pos]
-        self.keywords = {'def', 'return', 'end', 'if', 'else'}
+        self.keywords = ['def', 'return', 'end', 'if', 'then', 'elif', 'else']
         self.operators = ['+', '-', '*', '/', '//', '**', '=', '==', ';', ':']
 
     def advance(self):
@@ -30,13 +30,14 @@ class Lexer:
 
     def skip_whitespace(self):
         while self.pos < len(self.text) and self.ch.isspace():
+            if self.ch == '\n':
+                return
             self.advance()
 
     def skip_comment(self):
         if self.ch == '#':
-            while self.pos < len(self.text) and self.ch != '\n':
+            while self.pos < len(self.text) and self.ch != '\n':    # '\n' 作为token，不需要跳过
                 self.advance()
-            self.advance()  # jump over '\n'
 
     def peek(self):
         peek_pos = self.pos + 1
@@ -45,13 +46,21 @@ class Lexer:
         else:
             return self.text[peek_pos]
 
+    def peek_token(self):
+        pos = self.pos
+        ch = self.ch
+        token = self.next_token()
+        self.pos = pos
+        self.ch = ch
+        return token
+
     def identifier(self):
         result = ''
-        while self.pos < len(self.text) and self.ch.isalnum():  # alphabet and number
+        while self.pos < len(self.text) and self.ch.isalnum():
             result += self.ch
             self.advance()
         if result in self.keywords:
-            return Token('KEYWORD', result)
+            return Token(result.upper(), None)
         return Token('IDENT', result)
 
     def number(self):
@@ -128,6 +137,14 @@ class Lexer:
             self.advance()
             return Token(')', None)
 
+        if self.ch == ',':
+            self.advance()
+            return Token(',', None)
+
+        if self.ch == '\n':
+            self.advance()
+            return Token('NEWLINE', '\n')
+
         raise Exception("Invalid Token")
 
 
@@ -195,6 +212,12 @@ class Param(AST):
         self.var = var
 
 
+class FunCall(AST):
+    def __init__(self, name, params):
+        self.name = name
+        self.params = params
+
+
 class Parser:
     def __init__(self, text):
         self.lex = Lexer(text)
@@ -237,6 +260,8 @@ class Parser:
             node = UnaryOp(op=token, expr=self.expr())
             return node
         elif token.type == 'IDENT':
+            if self.lex.peek_token().type == '(':
+                return self.fun_call()
             return self.variable()
         else:
             raise Exception("Syntax Error: null expr")
@@ -253,49 +278,54 @@ class Parser:
             node = BinOp(left=node, op=op, right=self.term())
         return node
 
-    def program(self):
+    def program(self, end):
         results = []
-        while self.token.type != 'EOF':
+        while self.token.type != end:
             node = self.statement()
             if self.token.value == ';':
                 self.eat('OP')
                 results.append(node)
+            elif self.token.type == 'NEWLINE':
+                self.eat('NEWLINE')
+                results.append(node)
+            elif self.token.type == end:
+                break
             else:
-                raise Exception("Invalid Syntax: expected ;, got " + self.token.type)
-        self.eat('EOF')
+                raise Exception("Invalid Syntax: expected ; or NEWLINE or {}, got {}".format(end, self.token.type))
+        self.eat(end)
         return Program(results)
 
     def statement(self):
         if self.token.type == 'IDENT':
-            return self.assignment()
+            if self.lex.peek_token().value == '=':
+                return self.assignment()
+            return self.expr()
         elif self.token.type in ['INT', 'FLT', 'STRING']:
             return self.expr()
-        elif self.token.type == 'KEYWORD':
-            if self.token.value == 'def':
-                return self.defun()
-            raise Exception("Not implemented keyword")
+        elif self.token.type == 'DEF':
+            return self.defun()
+        elif self.token.type == 'IF':
+            pass    # return self.if_statement()
         else:
             return self.empty()     # important
 
     def defun(self):
-        self.eat('KEYWORD')     # def
-        # right now, no argument
-        name = self.variable()  # def name {block} end
+        self.eat('DEF')
+        name = self.variable()
         params = []
         if self.token.type == '(':
             params = self.parameters()
-        block = self.program()
-        if self.token.value == 'end':
-            self.eat('KEYWORD')
-            return Defun(name, params, block)
-        raise Exception("Invalid Syntax: expected end, got " + self.token.value)
+        if self.token.type == 'NEWLINE':
+            self.eat('NEWLINE')
+        block = self.program(end='END')
+        return Defun(name, params, block)
 
     def parameters(self):
         self.eat('(')
         result = []
         while self.token.type == 'IDENT':
             result.append(Param(self.variable()))
-            if self.token.type != ',':
+            if self.token.type == ')':
                 break
             self.eat(',')
         self.eat(')')
@@ -317,6 +347,11 @@ class Parser:
         node = Var(self.token)
         self.eat('IDENT')
         return node
+
+    def fun_call(self):
+        name = self.variable()
+        params = self.parameters()
+        return FunCall(name, params)
 
 
 class NodeVisitor(object):
@@ -554,7 +589,7 @@ class Interpreter(NodeVisitor):
             print(self.visit(statement))
 
     def visit_NoOp(self, node):     # dummy node
-        return "End of the program"
+        return "No operation."
 
     def visit_Assign(self, node):
         var_name = node.left.value
@@ -569,8 +604,14 @@ class Interpreter(NodeVisitor):
         else:
             return val
 
+    def visit_FunCall(self, node):
+        return "Call {}, params {}".format(node.name, node.params)
+
+    def visit_Defun(self, node):
+        return "defun {}, params {}, block {}".format(node.name.value, node.params, node.block)
+
     def interpret(self):
-        tree = self.parser.program()
+        tree = self.parser.program('EOF')
         return self.visit(tree)
 
 
