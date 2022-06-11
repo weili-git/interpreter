@@ -1,3 +1,4 @@
+# old test
 
 def foo1(a, b, c)
     a=1; b=2
@@ -7,4 +8,6 @@ a = 1
 a + 1
 a = "hello world!\naaa" # aaa
 foo1()
-"**" + a;;;
+"**" + a
+c=true
+c

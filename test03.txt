@@ -1,0 +1,13 @@
+# semantic test
+
+n = 1   # lookup to determine whether to insert it into symtab
+def foo(a)
+    a+1
+    def foox(b)
+        b+1
+    end
+end
+def fooy(c)
+    c+1
+end
+n = 2

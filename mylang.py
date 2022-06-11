@@ -1,561 +1,9 @@
-from collections import OrderedDict
-
-
-class Token:
-    def __init__(self, type, value):
-        self.type = type
-        self.value = value
-
-    def __str__(self):
-        return 'Token({type}, {value})'.format(type=self.type, value=repr(self.value))
-
-    def __repr__(self):
-        return self.__str__()
-
-
-class Lexer:
-    def __init__(self, text):
-        self.text = text
-        self.pos = 0
-        self.ch = self.text[self.pos]
-        self.keywords = ['def', 'return', 'end', 'if', 'then', 'elif', 'else']
-        self.operators = ['+', '-', '*', '/', '//', '**', '=', '==', ';', ':']
-
-    def advance(self):
-        self.pos += 1
-        if self.pos > len(self.text) - 1:
-            self.ch = None  # Indicates end of input
-        else:
-            self.ch = self.text[self.pos]
-
-    def skip_whitespace(self):
-        while self.pos < len(self.text) and self.ch.isspace():
-            if self.ch == '\n':
-                return
-            self.advance()
-
-    def skip_comment(self):
-        if self.ch == '#':
-            while self.pos < len(self.text) and self.ch != '\n':    # '\n' 作为token，不需要跳过
-                self.advance()
-
-    def peek(self):
-        peek_pos = self.pos + 1
-        if peek_pos > len(self.text) - 1:
-            return None
-        else:
-            return self.text[peek_pos]
-
-    def peek_token(self):
-        pos = self.pos
-        ch = self.ch
-        token = self.next_token()
-        self.pos = pos
-        self.ch = ch
-        return token
-
-    def identifier(self):
-        result = ''
-        while self.pos < len(self.text) and self.ch.isalnum():
-            result += self.ch
-            self.advance()
-        if result in self.keywords:
-            return Token(result.upper(), None)
-        return Token('IDENT', result)
-
-    def number(self):
-        result = ''     # str -> int
-        while self.pos < len(self.text) and self.ch.isdigit():
-            result += self.ch
-            self.advance()
-        if self.ch == '.':
-            result += self.ch
-            self.advance()
-            while self.pos < len(self.text) and self.ch.isdigit():
-                result += self.ch
-                self.advance()
-            return Token('FLT', float(result))
-        return Token('INT', int(result))
-
-    def string(self):
-        self.advance()
-        result = ''
-        while self.pos < len(self.text) and self.ch != '"':
-            if self.ch == '\\':
-                next = self.peek()
-                if next == '"':
-                    result += '"'
-                elif next == '\\':
-                    result += '\\'
-                elif next == 'n':
-                    result += '\n'
-                else:
-                    result += next
-                self.advance()
-                self.advance()
-                continue
-            result += self.ch
-            self.advance()
-        if self.ch != '"':
-            raise Exception("Syntax Error: EOF while scanning the string literal")
-        self.advance()
-        return Token('STRING', result)
-
-    def next_token(self):
-        self.skip_whitespace()
-        self.skip_comment()
-
-        if self.pos > len(self.text) - 1:
-            return Token('EOF', None)
-
-        self.ch = self.text[self.pos]
-
-        if self.ch.isalpha():
-            return self.identifier()
-
-        if self.ch.isdigit():
-            return self.number()
-
-        if self.ch == '"':
-            return self.string()
-
-        if self.ch in self.operators:
-            ch = self.ch
-            next = self.peek()
-            if next and ch + next in self.operators:
-                self.advance()
-                self.advance()
-                return Token('OP', ch + next)
-            self.advance()
-            return Token('OP', ch)
-
-        if self.ch == '(':  # eat('(') is available
-            self.advance()
-            return Token('(', None)
-
-        if self.ch == ')':
-            self.advance()
-            return Token(')', None)
-
-        if self.ch == ',':
-            self.advance()
-            return Token(',', None)
-
-        if self.ch == '\n':
-            self.advance()
-            return Token('NEWLINE', '\n')
-
-        raise Exception("Invalid Token")
-
-
-class AST:
-    pass
-
-
-class BinOp(AST):
-    def __init__(self, left, op, right):
-        self.left = left
-        self.token = self.op = op
-        self.right = right
-
-
-class UnaryOp(AST):
-    def __init__(self, op, expr):
-        self.op = op
-        self.expr = expr
-
-
-class Num(AST):
-    def __init__(self, token):
-        """INT | FLT"""
-        self.token = token
-        self.value = token.value
-
-
-class String(AST):
-    def __init__(self, token):
-        self.token = token
-        self.value = token.value
-
-
-class Program(AST):
-    def __init__(self, block):
-        self.block = block
-
-
-class NoOp(AST):
-    pass
-
-
-class Assign(AST):
-    def __init__(self, left, op, right):
-        self.left = left
-        self.op = op
-        self.right = right
-
-
-class Var(AST):
-    def __init__(self, token):
-        self.token = token
-        self.value = token.value
-
-
-class Defun(AST):
-    def __init__(self, name, params, block):
-        self.name = name
-        self.params = params  # list of Param nodes
-        self.block = block
-
-
-class Param(AST):
-    def __init__(self, var):
-        self.var = var
-
-
-class FunCall(AST):
-    def __init__(self, name, params):
-        self.name = name
-        self.params = params
-
-
-class Parser:
-    def __init__(self, text):
-        self.lex = Lexer(text)
-        self.token = self.lex.next_token()
-
-    def eat(self, token_type):
-        """check type and advance"""
-        print(self.token)
-        if self.token.type == token_type:
-            self.token = self.lex.next_token()
-        else:
-            raise Exception("Invalid Syntax: expected %s, got %s" % (token_type, self.token.type))
-
-    def term(self):
-        if self.token.type == 'STRING':
-            node = self.token
-            self.eat('STRING')
-            return String(node)
-        node = self.factor()
-        while self.token.value in ['*', '/', '//']:
-            op = self.operator()
-            node = BinOp(left=node, op=op, right=self.factor())
-        return node
-
-    def factor(self):
-        token = self.token
-        if token.type == 'INT':
-            self.eat('INT')
-            return Num(token)
-        elif token.type == 'FLT':
-            self.eat('FLT')
-            return Num(token)
-        elif token.type == '(':
-            self.eat('(')
-            node = self.expr()
-            self.eat(')')
-            return node
-        elif token.value in ['+', '-']:
-            self.eat('OP')
-            node = UnaryOp(op=token, expr=self.expr())
-            return node
-        elif token.type == 'IDENT':
-            if self.lex.peek_token().type == '(':
-                return self.fun_call()
-            return self.variable()
-        else:
-            raise Exception("Syntax Error: null expr")
-
-    def operator(self):
-        token = self.token
-        self.eat('OP')
-        return token
-
-    def expr(self):
-        node = self.term()
-        while self.token.value in ['+', '-']:
-            op = self.operator()
-            node = BinOp(left=node, op=op, right=self.term())
-        return node
-
-    def program(self, end):
-        results = []
-        while self.token.type != end:
-            node = self.statement()
-            if self.token.value == ';':
-                self.eat('OP')
-                results.append(node)
-            elif self.token.type == 'NEWLINE':
-                self.eat('NEWLINE')
-                results.append(node)
-            elif self.token.type == end:
-                break
-            else:
-                raise Exception("Invalid Syntax: expected ; or NEWLINE or {}, got {}".format(end, self.token.type))
-        self.eat(end)
-        return Program(results)
-
-    def statement(self):
-        if self.token.type == 'IDENT':
-            if self.lex.peek_token().value == '=':
-                return self.assignment()
-            return self.expr()
-        elif self.token.type in ['INT', 'FLT', 'STRING']:
-            return self.expr()
-        elif self.token.type == 'DEF':
-            return self.defun()
-        elif self.token.type == 'IF':
-            pass    # return self.if_statement()
-        else:
-            return self.empty()     # important
-
-    def defun(self):
-        self.eat('DEF')
-        name = self.variable()
-        params = []
-        if self.token.type == '(':
-            params = self.parameters()
-        if self.token.type == 'NEWLINE':
-            self.eat('NEWLINE')
-        block = self.program(end='END')
-        return Defun(name, params, block)
-
-    def parameters(self):
-        self.eat('(')
-        result = []
-        while self.token.type == 'IDENT':
-            result.append(Param(self.variable()))
-            if self.token.type == ')':
-                break
-            self.eat(',')
-        self.eat(')')
-        return result
-
-    def empty(self):
-        return NoOp()
-
-    def assignment(self):
-        left = self.variable()
-        op = self.token
-        if op.value == '=':
-            self.eat('OP')
-            right = self.expr()
-            return Assign(left, op, right)
-        raise Exception("Invalid Syntax: expected =, got " + op.value)
-
-    def variable(self):
-        node = Var(self.token)
-        self.eat('IDENT')
-        return node
-
-    def fun_call(self):
-        name = self.variable()
-        params = self.parameters()
-        return FunCall(name, params)
-
-
-class NodeVisitor(object):
-    def visit(self, node):
-        method_name = 'visit_' + type(node).__name__    # visit_BinOp ~ visit_UnaryOp
-        visitor = getattr(self, method_name, self.generic_visit)
-        # print(method_name)
-        return visitor(node)
-
-    def generic_visit(self, node):
-        raise Exception('No visit_{} method'.format(type(node).__name__))
-
-
-class Symbol:
-    def __init__(self, name, category, type=None):
-        self.name = name
-        self.category = category
-        self.type = type
-
-
-class BuiltinTypeSymbol(Symbol):
-    def __init__(self, name):
-        super().__init__(name)
-
-    def __str__(self):
-        return self.name
-
-    __repr__ = __str__
-
-
-class VarSymbol(Symbol):
-    def __init__(self, name, type):
-        super().__init__(name, type)
-
-    def __str__(self):
-        return "<{class_name}(name='{name}', type='{type}')>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            type=self.type,
-        )
-
-    __repr__ = __str__
-
-
-class ProcedureSymbol(Symbol):
-    def __init__(self, name, params=None):
-        super(ProcedureSymbol, self).__init__(name)
-        # a list of formal parameters
-        self.params = params if params is not None else []
-
-    def __str__(self):
-        return '<{class_name}(name={name}, parameters={params})>'.format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            params=self.params,
-        )
-
-    __repr__ = __str__
-
-
-class ScopedSymbolTable(object):
-    def __init__(self, scope_name, scope_level):
-        self._symbols = OrderedDict()
-        self.scope_name = scope_name
-        self.scope_level = scope_level
-        self._init_builtins()
-
-    def _init_builtins(self):
-        self.insert(BuiltinTypeSymbol('INTEGER'))
-        self.insert(BuiltinTypeSymbol('REAL'))
-
-    def __str__(self):
-        h1 = 'SCOPE (SCOPED SYMBOL TABLE)'
-        lines = ['\n', h1, '=' * len(h1)]
-        for header_name, header_value in (
-            ('Scope name', self.scope_name),
-            ('Scope level', self.scope_level),
-        ):
-            lines.append('%-15s: %s' % (header_name, header_value))
-        h2 = 'Scope (Scoped symbol table) contents'
-        lines.extend([h2, '-' * len(h2)])
-        lines.extend(
-            ('%7s: %r' % (key, value))
-            for key, value in self._symbols.items()
-        )
-        lines.append('\n')
-        s = '\n'.join(lines)
-        return s
-
-    __repr__ = __str__
-
-    def insert(self, symbol):
-        print('Insert: %s' % symbol.name)
-        self._symbols[symbol.name] = symbol
-
-    def lookup(self, name):
-        print('Lookup: %s' % name)
-        symbol = self._symbols.get(name)
-        # 'symbol' is either an instance of the Symbol class or None
-        return symbol
-
-
-class SemanticAnalyzer(NodeVisitor):
-    def __init__(self):
-        self.symtab = ScopedSymbolTable(scope_name='global', scope_level=1)
-        self.current_scope = None
-
-    def visit_Block(self, node):
-        for declaration in node.declarations:
-            self.visit(declaration)
-        self.visit(node.compound_statement)
-
-    def visit_Program(self, node):
-        self.visit(node.block)
-
-    def visit_BinOp(self, node):
-        self.visit(node.left)
-        self.visit(node.right)
-
-    def visit_Num(self, node):
-        pass
-
-    def visit_UnaryOp(self, node):
-        self.visit(node.expr)
-
-    def visit_Compound(self, node):
-        for child in node.children:
-            self.visit(child)
-
-    def visit_NoOp(self, node):
-        pass
-
-    def visit_VarDecl(self, node):
-        type_name = node.type_node.value
-        type_symbol = self.current_scope.lookup(type_name)
-
-        # We have all the information we need to create a variable symbol.
-        # Create the symbol and insert it into the symbol table.
-        var_name = node.var_node.value
-        var_symbol = VarSymbol(var_name, type_symbol)
-
-        self.current_scope.insert(var_symbol)
-
-    def visit_Assign(self, node):
-        var_name = node.left.value
-        var_symbol = self.symtab.lookup(var_name)
-        if var_symbol is None:
-            raise NameError(repr(var_name))
-
-        self.visit(node.right)
-
-    def visit_Var(self, node):
-        var_name = node.value
-        var_symbol = self.current_scope.lookup(var_name)
-        if var_symbol is None:
-            raise Exception(
-                "Error: Symbol(identifier) not found '%s'" % var_name
-            )
-
-    def visit_ProcedureDecl(self, node):
-        proc_name = node.proc_name
-        proc_symbol = ProcedureSymbol(proc_name)
-        self.current_scope.insert(proc_symbol)
-
-        print('ENTER scope: %s' % proc_name)
-        # Scope for parameters and local variables
-        procedure_scope = ScopedSymbolTable(
-            scope_name=proc_name,
-            scope_level=2,
-        )
-        self.current_scope = procedure_scope
-
-        # Insert parameters into the procedure scope
-        for param in node.params:
-            param_type = self.current_scope.lookup(param.type_node.value)
-            param_name = param.var_node.value
-            var_symbol = VarSymbol(param_name, param_type)
-            self.current_scope.insert(var_symbol)
-            proc_symbol.params.append(var_symbol)
-
-        self.visit(node.block_node)
-
-        print(procedure_scope)
-        print('LEAVE scope: %s' % proc_name)
-
-    def visit_Program(self, node):
-        print('ENTER scope: global')
-        global_scope = ScopedSymbolTable(
-            scope_name='global',
-            scope_level=1,
-        )
-        self.current_scope = global_scope
-
-        # visit subtree
-        self.visit(node.block)
-
-        print(global_scope)
-        print('LEAVE scope: global')
+from Semantic import *
 
 
 class Interpreter(NodeVisitor):
-    def __init__(self, text):
-        self.parser = Parser(text)
-        self.GLOBAL_SCOPE = OrderedDict()
+    def __init__(self):
+        self.call_stack = CallStack()
 
     def visit_BinOp(self, node):
         if node.op.value == '+':
@@ -581,58 +29,98 @@ class Interpreter(NodeVisitor):
     def visit_Num(self, node):
         return node.value
 
+    def visit_Bool(self, node):
+        return node.value
+
     def visit_String(self, node):
         return node.value
 
     def visit_Program(self, node):
-        for statement in node.block:
-            print(self.visit(statement))
+
+        ar = ActivationRecord(
+            name="mylang",
+            type=ARType.PROGRAM,
+            nesting_level=1,
+        )
+        self.call_stack.push(ar)
+        self.visit(node.block)
+        self.call_stack.pop()
 
     def visit_NoOp(self, node):     # dummy node
         return "No operation."
 
     def visit_Assign(self, node):
         var_name = node.left.value
-        self.GLOBAL_SCOPE[var_name] = self.visit(node.right)
-        return "Assign {} with {}".format(var_name, self.GLOBAL_SCOPE[var_name])
+        var_value = self.visit(node.right)
+        ar = self.call_stack.peek()
+        ar[var_name] = var_value
+        return "Assign {} with {}".format(var_name, var_value)
 
     def visit_Var(self, node):
         var_name = node.value
-        val = self.GLOBAL_SCOPE.get(var_name)
-        if val is None:
-            raise NameError(repr(var_name))
+
+        ar = self.call_stack.peek()
+        var_value = ar[var_name]
+        if var_value is None:
+            raise Exception("Undefined identifier: " + var_name)
         else:
-            return val
+            return var_value
 
     def visit_FunCall(self, node):
+        proc_name = node.proc_name
+
+        ar = ActivationRecord(
+            name=proc_name,
+            type=ARType.PROCEDURE,
+            nesting_level=2
+        )
+        proc_symbol = node.proc_symbol
+
+        formal_params = proc_symbol.formal_params
+        actual_params = node.actual_params
+        for param_symbol, argument_node in zip(formal_params, actual_params):
+            ar[param_symbol.name] = self.visit(argument_node)
+        self.call_stack.push(ar)
+        self.visit(proc_symbol.block_ast)
+        self.call_stack.pop()
         return "Call {}, params {}".format(node.name, node.params)
 
     def visit_Defun(self, node):
         return "defun {}, params {}, block {}".format(node.name.value, node.params, node.block)
 
-    def interpret(self):
-        tree = self.parser.program('EOF')
+    def visit_CondPair(self, node):
+        if self.visit(node.cond) not in [0, False, None]:
+            return node.block
+        else:
+            return None
+
+    def visit_Condition(self, node):
+        for pair in node.pair_list:
+            res = self.visit(pair)
+            if res:
+                return res
+        return node.else_block
+
+    def visit_Block(self, node):
+        pass
+
+    def interpret(self, tree):
         return self.visit(tree)
 
 
 def main():
-    with open("test.txt") as f:
-        code = f.read()
-        interpreter = Interpreter(code)
-        interpreter.interpret()
-    # while True:
-    #     try:
-    #         text = input('>>')
-    #     except EOFError:
-    #         break
-    #     if not text:
-    #         continue
-    #     if text == 'q':
-    #         break
-    #     interpreter = Interpreter(text)
-    #     result = interpreter.interpret()
+    with open("test02.txt") as f:
+        text = f.read()
+        tree = Parser(text).parse()
+
+        semantic_analyzer = SemanticAnalyzer()
+        semantic_analyzer.visit(tree)
+
+        interpreter = Interpreter()
+        interpreter.interpret(tree)
 
 
 if __name__ == '__main__':
     main()
 
+# https://github.com/rspivak/lsbasi/blob/master/part19/spi.py
