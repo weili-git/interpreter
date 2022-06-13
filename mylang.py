@@ -5,6 +5,9 @@ class Interpreter(NodeVisitor):
     def __init__(self):
         self.call_stack = CallStack()
 
+    def visit_NoOp(self, node):     # dummy node
+        return "No operation."
+
     def visit_BinOp(self, node):
         if node.op.value == '+':
             return self.visit(node.left) + self.visit(node.right)
@@ -46,8 +49,9 @@ class Interpreter(NodeVisitor):
         self.visit(node.block)
         self.call_stack.pop()
 
-    def visit_NoOp(self, node):     # dummy node
-        return "No operation."
+    def visit_Block(self, node):
+        for statement in node.statements:
+            print(self.visit(statement))
 
     def visit_Assign(self, node):
         var_name = node.left.value
@@ -61,32 +65,41 @@ class Interpreter(NodeVisitor):
 
         ar = self.call_stack.peek()
         var_value = ar[var_name]
-        if var_value is None:
+        if var_value is None:   # right now, 'None' is not assignable
             raise Exception("Undefined identifier: " + var_name)
         else:
             return var_value
 
     def visit_FunCall(self, node):
-        proc_name = node.proc_name
+        proc_name = node.token.value
+        cur_ar = self.call_stack.peek()
+        proc_symbol = cur_ar[proc_name]
 
         ar = ActivationRecord(
             name=proc_name,
             type=ARType.PROCEDURE,
-            nesting_level=2
+            nesting_level=proc_symbol.scope_level + 1
         )
-        proc_symbol = node.proc_symbol
 
         formal_params = proc_symbol.formal_params
         actual_params = node.actual_params
         for param_symbol, argument_node in zip(formal_params, actual_params):
-            ar[param_symbol.name] = self.visit(argument_node)
+            ar[param_symbol.token.value] = self.visit(argument_node)
         self.call_stack.push(ar)
         self.visit(proc_symbol.block_ast)
         self.call_stack.pop()
-        return "Call {}, params {}".format(node.name, node.params)
+        return "Call {}, params {}".format(node.token.value, node.actual_params)
 
     def visit_Defun(self, node):
-        return "defun {}, params {}, block {}".format(node.name.value, node.params, node.block)
+        proc_name = node.token.value
+        proc_symbol = FunSymbol(proc_name)
+        proc_symbol.formal_params = node.formal_params
+
+        proc_symbol.block_ast = node.block
+
+        current_ar = self.call_stack.peek()
+        current_ar[proc_name] = proc_symbol
+        return "define {}".format(proc_name)
 
     def visit_CondPair(self, node):
         if self.visit(node.cond) not in [0, False, None]:
@@ -101,15 +114,12 @@ class Interpreter(NodeVisitor):
                 return res
         return node.else_block
 
-    def visit_Block(self, node):
-        pass
-
     def interpret(self, tree):
         return self.visit(tree)
 
 
 def main():
-    with open("test02.txt") as f:
+    with open("test/test02.txt") as f:
         text = f.read()
         tree = Parser(text).parse()
 

@@ -1,7 +1,0 @@
-# Parser test
-
-def foo(n)
-    n+1
-end
-a = 1
-foo(a+1)

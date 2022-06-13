@@ -1,4 +1,4 @@
-# old test
+# Lexer test
 
 def foo1(a, b, c)
     a=1; b=2
