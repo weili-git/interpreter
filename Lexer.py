@@ -1,5 +1,3 @@
-
-
 class Token:
     def __init__(self, type, value):
         self.type = type
@@ -25,13 +23,13 @@ class Lexer:
         self.keywords = ['def', 'return', 'end', 'if', 'then', 'elif', 'else', 'true', 'false']
         self.operators = ['+', '-', '*', '/', '//', '**', '=', '==', ';', ':', '||', '&&', '!']
 
-    def advance(self):
+    def advance(self):  # eat one character
         if self.ch == '\n':
             self.ln += 1
             self.col = 0
         self.pos += 1
         if self.pos > len(self.text) - 1:
-            self.ch = None  # Indicates end of input
+            self.ch = None  # end of file
         else:
             self.ch = self.text[self.pos]
             self.col += 1
@@ -44,7 +42,7 @@ class Lexer:
 
     def skip_comment(self):
         if self.ch == '#':
-            while self.pos < len(self.text) and self.ch != '\n':    # '\n' 作为token，不需要跳过
+            while self.pos < len(self.text) and self.ch != '\n':    # skip until new line token
                 self.advance()
 
     def peek(self):
@@ -90,7 +88,7 @@ class Lexer:
     def string(self):
         ln_ = self.ln
         col_ = self.col
-        self.advance()
+        self.advance()  # left quotation
         result = ''
         while self.pos < len(self.text) and self.ch != '"':
             if self.ch == '\\':
@@ -110,7 +108,7 @@ class Lexer:
             self.advance()
         if self.ch != '"':
             raise Exception("LexerError: EOF while scanning the string literal, line:{} col:{}".format(ln_, col_))
-        self.advance()
+        self.advance()  # right quotation
         return Token('STRING', result)
 
     def next_token(self):

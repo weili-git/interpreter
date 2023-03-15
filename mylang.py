@@ -1,4 +1,5 @@
 from Semantic import *
+import argparse
 
 
 class Interpreter(NodeVisitor):
@@ -118,8 +119,8 @@ class Interpreter(NodeVisitor):
         return self.visit(tree)
 
 
-def main():
-    with open("test/test02.txt") as f:
+def parse_file(path):
+    with open(path) as f:
         text = f.read()
         tree = Parser(text).parse()
 
@@ -131,6 +132,10 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description="parse source file")
+    parser.add_argument("--file", type=str, default="test/test02.txt")
+
+    args = parser.parse_args()
+    parse_file(args.file)
 
 # https://github.com/rspivak/lsbasi/blob/master/part19/spi.py
