@@ -1,3 +1,6 @@
+# Introduction
+This is a python implementation of programming interpreter.
+
 # Get Started
 Use following commands to execute the interpreter to parse the source file.
 ```shell
