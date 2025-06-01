@@ -85,6 +85,11 @@ class FunCall(AST):
         self.proc_symbol = None
 
 
+class FunReturn(AST):
+    def __init__(self, expr):
+        self.expr = expr
+
+
 class CondPair(AST):
     def __init__(self, cond, block):
         self.cond = cond
@@ -136,28 +141,34 @@ class Parser:
 
     def statement(self):
         if self.token.type == 'IDENT':
-            if self.lex.peek_token().value == '=':
+            peek_token = self.lex.peek_token()
+            if peek_token.value in ['=', '+=', '-=', '*=', '/=', '//=']:
                 return self.assignment()
-            elif self.lex.peek_token().type == '(':
+            elif peek_token.type == '(':
                 return self.fun_call()
             return self.expr()
-        elif self.token.type in ['INT', 'FLT', 'STRING', 'BOOL']:
+        elif self.token.type in ['INT', 'FLT', 'STRING', 'BOOL']: # constant
             return self.expr()
         elif self.token.type == 'DEF':
             return self.defun()
         elif self.token.type == 'IF':
             return self.if_statement()
+        elif self.token.type == "RETURN":
+            return self.return_statement()
         else:
             return self.empty()
 
     def assignment(self):
         left = self.variable()
-        op = self.eat('OP')     # =, +=, -=, ...
+        assign_op = self.token.value
+        self.eat('OP')
         right = self.expr()
-        return Assign(left, op, right)
+        return Assign(left, assign_op, right)
 
     def fun_call(self):
+        # func name
         token = self.variable()
+        # func params
         actual_params = self.actual_parameters()
         return FunCall(token, actual_params)
 
@@ -173,18 +184,18 @@ class Parser:
         self.eat('END')
         return Defun(token, formal_params, block)
 
-    def formal_parameters(self):
+    def formal_parameters(self):  # def foo(n)
         self.eat('(')
-        result = []
+        fp = []
         while self.token.type == 'IDENT':
-            result.append(Param(self.variable()))
+            fp.append(Param(self.variable()))
             if self.token.type == ')':
                 break
             self.eat(',')
         self.eat(')')
-        return result
+        return fp
 
-    def actual_parameters(self):
+    def actual_parameters(self):  # foo(3)
         self.eat('(')
         params = []
         while self.token.type in ['INT', 'FLT', 'STRING', 'BOOL', 'IDENT']:
@@ -211,6 +222,11 @@ class Parser:
             else_block = self.block(end=['END'])
         self.eat('END')
         return Condition(pair_list, else_block)
+    
+    def return_statement(self):
+        self.eat('RETURN')
+        expr = self.expr()
+        return FunReturn(expr)
 
     def cond_pair(self):
         cond = self.expr()

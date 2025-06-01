@@ -2,9 +2,10 @@
 def foo(n)
     n*2
     def woo(m)
-        m//2
+        return m//2
     end
-    woo(n)
+    return woo(n)
 end
 a = 1
-foo(a+5)
+x = foo(a+5)
+# print(a)

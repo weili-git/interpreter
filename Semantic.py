@@ -31,7 +31,20 @@ class BuiltinTypeSymbol(Symbol):
         return "<{class_name}(name='{name}')>".format(class_name=self.__class__.__name__, name=self.name,)
 
 
-class VarSymbol(Symbol):
+class BuiltinFunSymbol(Symbol):
+    def __init__(self, name, formal_params=None):
+        super(BuiltinFunSymbol, self).__init__(name)
+        self.formal_params = [] if formal_params is None else formal_params
+        self.block_ast = None
+
+    def __str__(self):
+        return "<{class_name}(name='{name}', parameters='{parameters}')>".format(class_name=self.__class__.__name__,
+                                                                                 name=self.name,
+                                                                                 parameters=self.formal_params)
+    __repr__ = __str__
+
+
+class VarSymbol(Symbol):  # 弱类型
     def __init__(self, name):
         """<VarSymbol(name='x', type='INT')>"""
         super().__init__(name)
@@ -64,8 +77,9 @@ class ScopedSymbolTable(object):
         self._init_builtins()
 
     def _init_builtins(self):
-        for _ in ['INT', 'FLT']:
+        for _ in ['INT', 'FLT', 'STRING', 'BOOL']:
             self.insert(BuiltinTypeSymbol(_))
+        self.insert(BuiltinFunSymbol('print'))  # todo
 
     def __str__(self):
         h1 = 'SCOPE (SCOPED SYMBOL TABLE)'
@@ -89,6 +103,9 @@ class ScopedSymbolTable(object):
 
     def insert(self, symbol):
         print('Insert: %s' % symbol.name)
+        if symbol.name in self._symbols.keys() and symbol.__class__ == self._symbols[symbol.name].__class__:
+            # 允许变量和函数同名，但不允许重复定义同名函数
+            raise ValueError("{} already exists".format(symbol.name))
         self._symbols[symbol.name] = symbol
 
     def lookup(self, name):
@@ -138,6 +155,9 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_Num(self, node):
         pass
 
+    def visit_Bool(self, node):
+        pass
+
     def visit_String(self, node):
         pass
 
@@ -149,10 +169,9 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_Assign(self, node):   # assign and declare
         self.visit(node.right)
-
         var_name = node.left.value
         var_symbol = VarSymbol(var_name)
-        if not self.current_scope.lookup(var_name):
+        if not self.current_scope.lookup(var_name):  # 分开查找变量和函数？
             self.current_scope.insert(var_symbol)
 
     def visit_Var(self, node):  # checking declaration
@@ -193,6 +212,9 @@ class SemanticAnalyzer(NodeVisitor):
             self.visit(param)
         proc_symbol = self.current_scope.lookup(node.token.value)   # 查找函数定义
         node.proc_symbol = proc_symbol
+
+    def visit_FunReturn(self, node):
+        self.visit(node.expr)
 
 
 class CallStack:

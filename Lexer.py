@@ -20,8 +20,8 @@ class Lexer:
         self.ch = self.text[self.pos]
         self.ln = 1     # line number
         self.col = 1    # column
-        self.keywords = ['def', 'return', 'end', 'if', 'then', 'elif', 'else', 'true', 'false']
-        self.operators = ['+', '-', '*', '/', '//', '**', '=', '==', ';', ':', '||', '&&', '!']
+        self.keywords = ['def', 'return', 'end', 'if', 'then', 'elif', 'else', 'true', 'false', 'and', 'or', 'not']
+        self.operators = ['+', '-', '*', '/', '//', '**', '=', '+=', '-=', '*=', '/=', '//=', '==', ';', ':', '||', '&&', '!']
 
     def advance(self):  # eat one character
         if self.ch == '\n':

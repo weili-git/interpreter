@@ -8,6 +8,8 @@ def foo(a)
     end
 end
 def fooy(c)
-    c+1
+    return c+1
 end
 n = 2
+x = fooy(n)
+x + 1

@@ -2,6 +2,10 @@ from Semantic import *
 import argparse
 
 
+class FunReturn(Exception):
+    def __init__(self, value):
+        self.value = value
+
 class Interpreter(NodeVisitor):
     def __init__(self):
         self.call_stack = CallStack()
@@ -47,6 +51,7 @@ class Interpreter(NodeVisitor):
             nesting_level=1,
         )
         self.call_stack.push(ar)
+        # 构建内置函数？
         self.visit(node.block)
         self.call_stack.pop()
 
@@ -56,14 +61,27 @@ class Interpreter(NodeVisitor):
 
     def visit_Assign(self, node):
         var_name = node.left.value
-        var_value = self.visit(node.right)
+        assign_value = self.visit(node.right)
         ar = self.call_stack.peek()
-        ar[var_name] = var_value
-        return "Assign {} with {}".format(var_name, var_value)
+        if node.op == '=':
+            pass
+        elif node.op == '+=':
+            assign_value += self.visit(node.left)
+        elif node.op == '-=':
+            assign_value -= self.visit(node.left)
+        elif node.op == '*=':
+            assign_value *= self.visit(node.left)
+        elif node.op == '/=':
+            assign_value /= self.visit(node.left)
+        elif node.op == '//=':
+            assign_value //= self.visit(node.left)
+        else:
+            print("Not an assignment operator: ", node.op)
+        ar[var_name] = assign_value
+        return "Assign {} with {}".format(var_name, assign_value)
 
     def visit_Var(self, node):
         var_name = node.value
-
         ar = self.call_stack.peek()
         var_value = ar[var_name]
         if var_value is None:   # right now, 'None' is not assignable
@@ -87,11 +105,22 @@ class Interpreter(NodeVisitor):
         for param_symbol, argument_node in zip(formal_params, actual_params):
             ar[param_symbol.token.value] = self.visit(argument_node)
         self.call_stack.push(ar)
-        self.visit(proc_symbol.block_ast)
-        self.call_stack.pop()
-        return "Call {}, params {}".format(node.token.value, node.actual_params)
 
-    def visit_Defun(self, node):
+        return_value = None
+        try:
+            self.visit(proc_symbol.block_ast)
+        except FunReturn as fr:
+            return fr.value
+        finally:
+            self.call_stack.pop()
+            print("Call {}, params {}".format(node.token.value, node.actual_params))
+        return return_value
+    
+    def visit_FunReturn(self, node):
+        return_value = self.visit(node.expr)
+        raise FunReturn(return_value)
+
+    def visit_Defun(self, node):  ###
         proc_name = node.token.value
         proc_symbol = FunSymbol(proc_name)
         proc_symbol.formal_params = node.formal_params
@@ -133,9 +162,9 @@ def parse_file(path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="parse source file")
-    parser.add_argument("--file", type=str, default="test/test02.txt")
+    parser.add_argument("--src", type=str, default="test/test02.txt")
 
     args = parser.parse_args()
-    parse_file(args.file)
+    parse_file(args.src)
 
 # https://github.com/rspivak/lsbasi/blob/master/part19/spi.py
