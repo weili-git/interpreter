@@ -160,6 +160,12 @@ class SemanticAnalyzer(NodeVisitor):
         for statement in node.statements:
             self.visit(statement)
 
+    def visit_WhileLoop(self, node):
+        # 检查循环条件的语义
+        self.visit(node.cond)
+        # 检查循环体的语义
+        self.visit(node.block)
+
     def visit_BinOp(self, node):
         self.visit(node.left)
         self.visit(node.right)
@@ -214,16 +220,23 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_Assign(self, node):   # assign and declare
         self.visit(node.right)
-        var_name = node.left.value
-        # 如果右值是数组，创建ArraySymbol，否则创建VarSymbol
-        if isinstance(node.right, Array):
-            array_symbol = ArraySymbol(var_name, node.right.element_type, node.right.elements)
-            if not self.current_scope.lookup(var_name):
-                self.current_scope.insert(array_symbol)
-        else:
-            var_symbol = VarSymbol(var_name)
-            if not self.current_scope.lookup(var_name):  # 分开查找变量和函数？
-                self.current_scope.insert(var_symbol)
+        # 处理不同类型的左值
+        if isinstance(node.left, Var):
+            # 普通变量赋值，原有逻辑
+            var_name = node.left.value
+            # 如果右值是数组，创建ArraySymbol，否则创建VarSymbol
+            if isinstance(node.right, Array):
+                array_symbol = ArraySymbol(var_name, node.right.element_type, node.right.elements)
+                if not self.current_scope.lookup(var_name):
+                    self.current_scope.insert(array_symbol)
+            else:
+                var_symbol = VarSymbol(var_name)
+                if not self.current_scope.lookup(var_name):  # 分开查找变量和函数？
+                    self.current_scope.insert(var_symbol)
+        elif isinstance(node.left, ArrayAccess):
+            # 数组元素赋值，先检查数组本身是否定义，再检查索引的语义
+            self.visit(node.left.array)
+            self.visit(node.left.index)
 
     def visit_Var(self, node):  # checking declaration
         var_name = node.value

@@ -1,0 +1,27 @@
+# 冒泡排序测试：测试数组和while循环的功能
+arr = [64, 34, 25, 12, 22, 11, 90]
+n = 7
+swapped = 1
+
+print("排序前的数组:")
+print(arr)
+
+while swapped
+    swapped = 0
+    i = 0
+    while i < n - 1
+        if arr[i] > arr[i+1] then
+            # 交换元素
+            temp = arr[i]
+            arr[i] = arr[i+1]
+            arr[i+1] = temp
+            swapped = 1
+        end
+        i = i + 1
+    end
+    n = n - 1
+end
+
+# 打印排序后的数组
+print("排序后的数组:")
+print(arr)

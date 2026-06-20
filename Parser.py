@@ -101,6 +101,11 @@ class Condition(AST):
         self.pair_list = pair_list
         self.else_block = else_block
 
+class WhileLoop(AST):
+    def __init__(self, cond, block):
+        self.cond = cond
+        self.block = block
+
 class Array(AST):
     def __init__(self, elements):
         self.elements = elements
@@ -139,6 +144,9 @@ class Parser:
             if self.token.type in end:
                 break
             print(f"[DEBUG block] ln:{self.lex.ln} 当前token:{self.token}, 结束标记:{end}")
+            # 再次检查，防止在处理空行的过程中token发生变化，现在如果是结束标记，直接break
+            if self.token.type in end:
+                break
             node = self.statement()
             if self.token.value == ';':
                 self.eat('OP')
@@ -157,6 +165,17 @@ class Parser:
 
     def statement(self):
         if self.token.type == 'IDENT':
+            # 先解析表达式，不管是变量还是数组访问，然后检查后面是否有赋值符号
+            expr_node = self.expr()
+            if self.token.value in ['=', '+=', '-=', '*=', '/=', '//=']:
+                # 如果后面有赋值符号，说明这是一个赋值语句，左值是刚才解析的表达式（变量或数组访问）
+                assign_op = self.token.value
+                self.eat('OP')
+                right = self.expr()
+                return Assign(expr_node, assign_op, right)
+            else:
+                # 没有赋值符号，就是普通的表达式
+                return expr_node
             peek_token = self.lex.peek_token()
             if peek_token.value in ['=', '+=', '-=', '*=', '/=', '//=']:
                 return self.assignment()
@@ -170,6 +189,8 @@ class Parser:
             return self.defun(is_pure)
         elif self.token.type == 'IF':
             return self.if_statement()
+        elif self.token.type == 'WHILE':
+            return self.while_statement()
         elif self.token.type == "RETURN":
             return self.return_statement()
         else:
@@ -268,6 +289,19 @@ class Parser:
             self.eat('END')
         return Condition(pair_list, else_block)
     
+    def while_statement(self):
+        self.eat('WHILE')
+        cond = self.expr()
+        if self.token.type in ['NEWLINE'] or self.token.value == ';':
+            self.eat('ANY')
+        else:
+            raise Exception('ParserError: expected NEWLINE or ; after while condition, got {}'.format(self.token))
+        # 内层的while block只有遇到END才会结束，不会提前遇到其他顶层语句结束
+        block = self.block(end=['END'])
+        if self.token.type == 'END':
+            self.eat('END')
+        return WhileLoop(cond, block)
+    
     def return_statement(self):
         self.eat('RETURN')
         expr = self.expr()
@@ -301,6 +335,9 @@ class Parser:
         elif token.type == 'BOOL':
             self.eat('BOOL')
             return Bool(token)
+        elif token.type == 'STRING':
+            self.eat('STRING')
+            return String(token)
         elif token.type == '(':
             self.eat('(')
             node = self.expr()
@@ -367,14 +404,25 @@ class Parser:
             node = BinOp(left=node, op=op, right=self.comparison())
         return node
         
-    def comparison(self):
-        node = self.term()
-        while self.token.value in ['==', '!=', '<', '>', '<=', '>=']:
-            op = self.operator()
-            node = BinOp(left=node, op=op, right=self.term())
+    def addition_subtraction(self):
+        node = self.multiplication_division()
         while self.token.value in ['+', '-']:
             op = self.operator()
-            node = BinOp(left=node, op=op, right=self.term())
+            node = BinOp(left=node, op=op, right=self.multiplication_division())
+        return node
+
+    def multiplication_division(self):
+        node = self.factor()
+        while self.token.value in ['*', '/', '//', '%']:
+            op = self.operator()
+            node = BinOp(left=node, op=op, right=self.factor())
+        return node
+
+    def comparison(self):
+        node = self.addition_subtraction()
+        while self.token.value in ['==', '!=', '<', '>', '<=', '>=']:
+            op = self.operator()
+            node = BinOp(left=node, op=op, right=self.addition_subtraction())
         return node
 
     def variable(self):

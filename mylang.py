@@ -16,9 +16,11 @@ class Interpreter(NodeVisitor):
         if isinstance(v, str):
             return f'"{v}"'
         elif isinstance(v, list):
-            # 递归格式化数组元素
+            # 递归格式化数组元素，支持嵌套数组
             formatted_elements = [self.format_val(elem) for elem in v]
-            return f"[{', '.join(formatted_elements)}]"
+            return f'[{", ".join(formatted_elements)}]'
+        elif v is None:
+            return 'None'
         return str(v)
 
     def visit_NoOp(self, node):     # dummy node
@@ -134,9 +136,9 @@ class Interpreter(NodeVisitor):
         return last_result
 
     def visit_Assign(self, node):
-        var_name = node.left.value
         assign_value = self.visit(node.right)
         ar = self.call_stack.peek()
+        # 处理复合赋值运算符
         if node.op == '=':
             pass
         elif node.op == '+=':
@@ -153,16 +155,24 @@ class Interpreter(NodeVisitor):
             print("Not an assignment operator: ", node.op)
         # 处理数组元素赋值
         if isinstance(node.left, ArrayAccess):
-            array = self.visit(node.left.array)
-            index = int(self.visit(node.left.index))
-            array_len = len(array)
+            # 处理数组元素赋值: arr[i] = value，ArrayAccess的属性是array和index
+            array_node = node.left.array
+            index_node = node.left.index
+            array_name = array_node.value
+            index = self.visit(index_node)
+            target_array = ar[array_name]
+            array_len = len(target_array)
+            # 支持负索引
             if index < 0:
                 index += array_len
+            # 检查索引越界
             if index < 0 or index >= array_len:
                 raise Exception(f"RuntimeError: 数组索引越界，数组长度: {array_len}, 访问索引: {index}")
-            array[index] = assign_value
-            print(f"[赋值语句] {node.left.array.value}[{index}] = {self.format_val(assign_value)}")
-        else:
+            target_array[index] = assign_value
+            print(f"[赋值语句] {array_name}[{index}] = {self.format_val(assign_value)}")
+        elif isinstance(node.left, Var):
+            # 普通变量赋值
+            var_name = node.left.value
             ar[var_name] = assign_value
             print(f"[赋值语句] {var_name} = {self.format_val(assign_value)}")
         return assign_value
@@ -194,6 +204,16 @@ class Interpreter(NodeVisitor):
             if not isinstance(arg, list):
                 raise Exception(f"RuntimeError: len()函数只支持数组类型，当前类型: {type(arg).__name__}")
             return len(arg)
+        elif proc_name == 'print_arr':
+            if len(node.actual_params) != 1:
+                raise Exception(f"RuntimeError: print_arr()函数需要1个数组参数，当前传入{len(node.actual_params)}个")
+            arg = self.visit(node.actual_params[0])
+            if not isinstance(arg, list):
+                raise Exception(f"RuntimeError: print_arr()函数只支持数组类型，当前类型: {type(arg).__name__}")
+            # 格式化打印数组元素
+            elements_str = ', '.join(self.format_val(elem) for elem in arg)
+            print(f"[打印数组] [{elements_str}]")
+            return None
         cur_ar = self.call_stack.peek()
         proc_symbol = cur_ar[proc_name]
 
@@ -283,6 +303,22 @@ class Interpreter(NodeVisitor):
                 result = self.visit(node.else_block)
         print("[条件语句结束]")
         return result
+
+    def visit_WhileLoop(self, node):
+        print("[循环开始] while循环")
+        loop_count = 0
+        max_loops = 10000  # 防止无限循环
+        while True:
+            cond_result = self.visit(node.cond)
+            if cond_result in [0, False, None] or loop_count >= max_loops:
+                if loop_count >= max_loops:
+                    print("[循环警告] 达到最大循环次数，强制退出")
+                break
+            print(f"[循环执行] 第{loop_count+1}次迭代")
+            self.visit(node.block)
+            loop_count += 1
+        print(f"[循环结束] 共执行{loop_count}次迭代")
+        return None
 
     def interpret(self, tree):
         return self.visit(tree)
