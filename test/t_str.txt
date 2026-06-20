@@ -2,8 +2,7 @@ a="a"
 b="b"
 a+b
 a="c"
-def a(n)
+def aa(n)
     n*2
 end
 a="d"
-a(2)

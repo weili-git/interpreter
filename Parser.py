@@ -101,6 +101,15 @@ class Condition(AST):
         self.pair_list = pair_list
         self.else_block = else_block
 
+class Array(AST):
+    def __init__(self, elements):
+        self.elements = elements
+
+class ArrayAccess(AST):
+    def __init__(self, array, index):
+        self.array = array
+        self.index = index
+
 
 class Parser:
     def __init__(self, text):
@@ -123,6 +132,13 @@ class Parser:
     def block(self, end):
         statements = []
         while self.token.type not in end:
+            # 处理所有连续的空行
+            while self.token.type == 'NEWLINE':
+                self.eat('NEWLINE')
+            # 处理完空行后再次检查结束标记，避免处理完空行后才遇到结束标记仍进入解析
+            if self.token.type in end:
+                break
+            print(f"[DEBUG block] ln:{self.lex.ln} 当前token:{self.token}, 结束标记:{end}")
             node = self.statement()
             if self.token.value == ';':
                 self.eat('OP')
@@ -149,8 +165,9 @@ class Parser:
             return self.expr()
         elif self.token.type in ['INT', 'FLT', 'STRING', 'BOOL']: # constant
             return self.expr()
-        elif self.token.type == 'DEF':
-            return self.defun()
+        elif self.token.type == 'DEF' or self.token.type == 'PURE':
+            is_pure = self.token.type == 'PURE'
+            return self.defun(is_pure)
         elif self.token.type == 'IF':
             return self.if_statement()
         elif self.token.type == "RETURN":
@@ -172,8 +189,11 @@ class Parser:
         actual_params = self.actual_parameters()
         return FunCall(token, actual_params)
 
-    def defun(self):
-        self.eat('DEF')
+    def defun(self, is_pure=False):
+        if is_pure:
+            self.eat('PURE')
+        else:
+            self.eat('DEF')
         token = self.variable()
         formal_params = []
         if self.token.type == '(':
@@ -182,7 +202,9 @@ class Parser:
             self.eat('ANY')
         block = self.block(end=['END'])
         self.eat('END')
-        return Defun(token, formal_params, block)
+        node = Defun(token, formal_params, block)
+        node.is_pure = is_pure
+        return node
 
     def formal_parameters(self):  # def foo(n)
         self.eat('(')
@@ -208,10 +230,30 @@ class Parser:
 
     def if_statement(self):
         self.eat('IF')
-        pair_list = [self.cond_pair()]
+        pair_list = []
+        
+        # 处理if块
+        cond = self.expr()
+        if self.token.type in ['THEN', 'NEWLINE'] or self.token.value == ';':
+            self.eat('ANY')
+        else:
+            raise Exception('ParserError: expected THEN, NEWLINE or ;, got {}'.format(self.token))
+        # if块的结束标记是ELIF、ELSE或END
+        block = self.block(end=['ELIF', 'ELSE', 'END'])
+        pair_list.append(CondPair(cond, block))
+        
+        # 处理所有elif块
         while self.token.type == 'ELIF':
             self.eat('ELIF')
-            pair_list.append(self.cond_pair())
+            cond = self.expr()
+            if self.token.type in ['THEN', 'NEWLINE'] or self.token.value == ';':
+                self.eat('ANY')
+            else:
+                raise Exception('ParserError: expected THEN, NEWLINE or ;, got {}'.format(self.token))
+            block = self.block(end=['ELIF', 'ELSE', 'END'])
+            pair_list.append(CondPair(cond, block))
+        
+        # 处理else块
         else_block = None
         if self.token.type == 'ELSE':
             self.eat('ELSE')
@@ -220,7 +262,10 @@ class Parser:
             else:
                 raise Exception('ParserError: expected THEN, NEWLINE or ;, got {}'.format(self.token))
             else_block = self.block(end=['END'])
-        self.eat('END')
+        
+        # 最后消费END
+        if self.token.type == 'END':
+            self.eat('END')
         return Condition(pair_list, else_block)
     
     def return_statement(self):
@@ -261,13 +306,40 @@ class Parser:
             node = self.expr()
             self.eat(')')
             return node
+        elif token.type == '[':
+            # 数组字面量: [1, 2, 3]
+            self.eat('[')
+            elements = []
+            # 处理空数组的情况
+            if self.token.type == ']':
+                self.eat(']')
+                return Array(elements)
+            # 解析第一个元素
+            elements.append(self.expr())
+            # 继续解析后面的元素，每个元素前面都有逗号
+            while self.token.type == ',':
+                self.eat(',')
+                # 跳过可能的换行
+                if self.token.type == 'NEWLINE':
+                    self.eat('NEWLINE')
+                elements.append(self.expr())
+            # 现在应该遇到]了
+            self.eat(']')
+            return Array(elements)
         elif token.value in ['+', '-']:
             self.eat('OP')
-            node = UnaryOp(op=token, expr=self.expr())
+            node = UnaryOp(op=token, expr=self.factor())  # 只递归调用factor，确保一元运算符只作用于下一个因子，优先级高于四则运算
             return node
         elif token.type == 'IDENT':
-            if self.lex.peek_token().type == '(':
+            next_token = self.lex.peek_token()
+            if next_token.type == '(':
                 return self.fun_call()
+            elif next_token.type == '[':  # 数组访问: arr[0]
+                array_node = self.variable()
+                self.eat('[')
+                index_node = self.expr()
+                self.eat(']')
+                return ArrayAccess(array_node, index_node)
             return self.variable()
         else:
             raise Exception("ParserError: unexpected factor {token}".format(token=self.token))
@@ -278,8 +350,29 @@ class Parser:
         return token
 
     def expr(self):
+        node = self.logical_or()
+        return node
+        
+    def logical_or(self):
+        node = self.logical_and()
+        while self.token.value in ['or', '||']:
+            op = self.operator()
+            node = BinOp(left=node, op=op, right=self.logical_and())
+        return node
+        
+    def logical_and(self):
+        node = self.comparison()
+        while self.token.value in ['and', '&&']:
+            op = self.operator()
+            node = BinOp(left=node, op=op, right=self.comparison())
+        return node
+        
+    def comparison(self):
         node = self.term()
-        while self.token.value in ['+', '-']:     # 实际上||,&&和!的优先级很低
+        while self.token.value in ['==', '!=', '<', '>', '<=', '>=']:
+            op = self.operator()
+            node = BinOp(left=node, op=op, right=self.term())
+        while self.token.value in ['+', '-']:
             op = self.operator()
             node = BinOp(left=node, op=op, right=self.term())
         return node
@@ -295,6 +388,3 @@ class Parser:
     def parse(self):
         tree = self.program()
         return tree
-
-
-

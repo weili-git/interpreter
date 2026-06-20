@@ -68,6 +68,17 @@ class FunSymbol(Symbol):
     __repr__ = __str__
 
 
+class ArraySymbol(Symbol):
+    def __init__(self, name, element_type, elements=None):
+        super().__init__(name)
+        self.element_type = element_type  # 'number', 'string', 'bool', None(空数组)
+        self.elements = elements or []
+
+    def __str__(self):
+        return f"<ArraySymbol(name='{self.name}', element_type='{self.element_type}')>"
+    __repr__ = __str__
+
+
 class ScopedSymbolTable(object):
     def __init__(self, scope_name, scope_level, enclosing_scope):
         self._symbols = {}
@@ -103,9 +114,10 @@ class ScopedSymbolTable(object):
 
     def insert(self, symbol):
         print('Insert: %s' % symbol.name)
-        if symbol.name in self._symbols.keys() and symbol.__class__ == self._symbols[symbol.name].__class__:
-            # 允许变量和函数同名，但不允许重复定义同名函数
-            raise ValueError("{} already exists".format(symbol.name))
+        if symbol.name in self._symbols.keys():
+            # 同一作用域内不允许任何重复名称，无论是变量还是函数
+            existing = self._symbols[symbol.name]
+            raise ValueError(f"标识符 '{symbol.name}' 已经存在，不能重复定义。原定义为: {existing}")
         self._symbols[symbol.name] = symbol
 
     def lookup(self, name):
@@ -161,6 +173,39 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_String(self, node):
         pass
 
+    def visit_Array(self, node):
+        element_type = None
+        # 检查数组元素类型是否一致
+        for element in node.elements:
+            self.visit(element)  # 先处理元素本身的语义检查
+            # 推断元素类型
+            if isinstance(element, Num):
+                current_type = 'number'
+            elif isinstance(element, String):
+                current_type = 'string'
+            elif isinstance(element, Bool):
+                current_type = 'bool'
+            else:
+                # 变量或表达式，暂时支持，运行时会再次检查
+                current_type = None
+                
+            if element_type is None:
+                element_type = current_type
+            elif element_type != current_type and current_type is not None:
+                raise Exception(f"SemanticError: 数组元素类型不一致，期望类型 '{element_type}'，但发现类型 '{current_type}'。")
+        # 存储数组的元素类型，供后续使用
+        node.element_type = element_type
+
+    def visit_ArrayAccess(self, node):
+        # 检查数组是否存在
+        self.visit(node.array)  # 先检查数组变量是否已定义
+        # 检查索引的类型
+        self.visit(node.index)
+        # 索引必须是数值类型
+        index_node = node.index
+        if not isinstance(index_node, (Num, Var, BinOp, UnaryOp)):  # 支持一元运算符，如-1
+            raise Exception(f"SemanticError: 数组索引必须是数值类型。节点: {index_node}")
+
     def visit_UnaryOp(self, node):
         self.visit(node.expr)
 
@@ -170,19 +215,27 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_Assign(self, node):   # assign and declare
         self.visit(node.right)
         var_name = node.left.value
-        var_symbol = VarSymbol(var_name)
-        if not self.current_scope.lookup(var_name):  # 分开查找变量和函数？
-            self.current_scope.insert(var_symbol)
+        # 如果右值是数组，创建ArraySymbol，否则创建VarSymbol
+        if isinstance(node.right, Array):
+            array_symbol = ArraySymbol(var_name, node.right.element_type, node.right.elements)
+            if not self.current_scope.lookup(var_name):
+                self.current_scope.insert(array_symbol)
+        else:
+            var_symbol = VarSymbol(var_name)
+            if not self.current_scope.lookup(var_name):  # 分开查找变量和函数？
+                self.current_scope.insert(var_symbol)
 
     def visit_Var(self, node):  # checking declaration
         var_name = node.value
         var_symbol = self.current_scope.lookup(var_name)
         if var_symbol is None:
-            raise Exception("SemanticError: identifier not found {}".format(node.token))
+            raise Exception(f"SemanticError: 变量 '{var_name}' 未定义，请先声明后再使用。节点信息: {node.token}")
 
     def visit_Defun(self, node):
         proc_name = node.token.value
         proc_symbol = FunSymbol(proc_name)
+        # 将纯函数标记传递到符号表中
+        proc_symbol.is_pure = getattr(node, 'is_pure', False)
         self.current_scope.insert(proc_symbol)
 
         print('ENTER scope: %s' % proc_name)
@@ -210,11 +263,31 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_FunCall(self, node):
         for param in node.actual_params:
             self.visit(param)
-        proc_symbol = self.current_scope.lookup(node.token.value)   # 查找函数定义
+        proc_name = node.token.value
+        # 内置函数不需要提前定义
+        builtin_functions = ['print', 'len']
+        if proc_name in builtin_functions:
+            return
+        proc_symbol = self.current_scope.lookup(proc_name)   # 查找函数定义
+        if proc_symbol is None:
+            raise Exception(f"SemanticError: 函数 '{proc_name}' 未定义，请先定义后再调用。节点信息: {node.token}")
+        # 检查是否确实是函数类型
+        if not isinstance(proc_symbol, FunSymbol):
+            raise Exception(f"SemanticError: '{proc_name}' 不是一个函数，无法调用。它的类型是: {type(proc_symbol).__name__}")
         node.proc_symbol = proc_symbol
 
     def visit_FunReturn(self, node):
         self.visit(node.expr)
+        
+    def visit_CondPair(self, node):
+        self.visit(node.cond)
+        self.visit(node.block)
+        
+    def visit_Condition(self, node):
+        for pair in node.pair_list:
+            self.visit(pair)
+        if node.else_block:
+            self.visit(node.else_block)
 
 
 class CallStack:
@@ -276,6 +349,3 @@ class ActivationRecord:
 
     def __repr__(self):
         return self.__str__()
-
-
-

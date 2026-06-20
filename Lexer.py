@@ -20,8 +20,8 @@ class Lexer:
         self.ch = self.text[self.pos]
         self.ln = 1     # line number
         self.col = 1    # column
-        self.keywords = ['def', 'return', 'end', 'if', 'then', 'elif', 'else', 'true', 'false', 'and', 'or', 'not']
-        self.operators = ['+', '-', '*', '/', '//', '**', '=', '+=', '-=', '*=', '/=', '//=', '==', ';', ':', '||', '&&', '!']
+        self.keywords = ['def', 'pure', 'return', 'end', 'if', 'then', 'elif', 'else', 'true', 'false', 'and', 'or', 'not']
+        self.operators = ['+', '-', '*', '/', '//', '**', '=', '+=', '-=', '*=', '/=', '//=', '==', '!=', '<', '>', '<=', '>=', ';', ':', '||', '&&', '!']
 
     def advance(self):  # eat one character
         if self.ch == '\n':
@@ -121,7 +121,11 @@ class Lexer:
         self.ch = self.text[self.pos]
 
         if self.ch.isalpha():
-            return self.identifier()
+            token = self.identifier()
+            # 将not作为运算符处理，让它能被UnaryOp正确识别
+            if token.type == 'NOT':
+                return Token('OP', '!')
+            return token
 
         if self.ch.isdigit():
             return self.number()
@@ -150,6 +154,12 @@ class Lexer:
         if self.ch == ',':
             self.advance()
             return Token(',', None)
+        if self.ch == '[':
+            self.advance()
+            return Token('[', None)
+        if self.ch == ']':
+            self.advance()
+            return Token(']', None)
 
         if self.ch == '\n':
             self.advance()
@@ -163,4 +173,3 @@ class Lexer:
 # while token.type != 'EOF':
 #     print(token)
 #     token = lex.next_token()
-

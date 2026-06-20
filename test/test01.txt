@@ -11,3 +11,4 @@ foo1()
 "**" + a
 c=true
 c
+"hello world" + "1.111"

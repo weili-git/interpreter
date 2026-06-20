@@ -1,0 +1,14 @@
+pure fib(n)
+    if n <= 1 then
+        n
+    else
+        a = fib(n-1)
+        b = fib(n-2)
+        a + b
+    end
+end
+
+result = fib(18)
+print(result)
+
+# 1 1 2 3 5 8 13 21 34

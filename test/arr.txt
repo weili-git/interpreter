@@ -1,0 +1,13 @@
+# 合法的数组定义
+nums = [1, 2, 3]
+nums[0]
+nums[-1]  # 访问最后一个元素
+
+strs = ["hello", "world"]
+strs[1]
+
+# 空数组
+empty = []
+
+# 这行会报错，类型不一致
+# invalid = [1, "string"]

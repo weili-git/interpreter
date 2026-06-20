@@ -1,0 +1,6 @@
+a = 10
+if a > 5 then
+    print("a大于5")
+else
+    print("a小于等于5")
+end
