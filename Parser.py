@@ -118,7 +118,7 @@ class MemberAccess(AST):
     def __init__(self, obj, method, args):
         self.object = obj      # 被访问的对象（数组变量）
         self.method = method   # 方法名（push/pop等）
-        self.args = args       # 方法调用的参数列表
+        self.args = args       # 调用参数列表
 
 class Array(AST):
     def __init__(self, elements):
@@ -347,97 +347,88 @@ class Parser:
             node = BinOp(left=node, op=op, right=self.factor())
         return node
 
-    def primary(self):
-        """primary处理变量、数组访问、成员方法调用等基础表达式
-        IDENTIFIER -> 检查是否有[索引]或者.方法()
+    def factor(self):
+        """原始的factor方法，保持和项目代码完全一致
         """
         token = self.token
+        if token.value in ['+', '-', 'not', '!']:
+            self.eat('OP')
+            node = UnaryOp(op=token, expr=self.factor())
+            return node
+        if token.type in ['INT', 'FLT']:
+            self.eat('ANY')
+            return Num(token)
+        if token.type == 'BOOL':
+            self.eat('BOOL')
+            return Bool(token)
+        if token.type == 'STRING':
+            self.eat('STRING')
+            return String(token)
+        if token.type == '(':
+            self.eat('(')
+            node = self.expr()
+            self.eat(')')
+            return node
+        if token.type == '[':
+            self.eat('[')
+            elements = []
+            if self.token.type == ']':
+                self.eat(']')
+                return Array(elements)
+            elements.append(self.expr())
+            while self.token.type == ',':
+                self.eat(',')
+                if self.token.type == 'NEWLINE':
+                    self.eat('NEWLINE')
+                elements.append(self.expr())
+            self.eat(']')
+            return Array(elements)
         if token.type == 'IDENT':
             var_node = Var(token)
             self.eat('IDENT')
-            # 循环处理后缀操作符：支持连续的数组访问和方法调用
+            # 循环处理所有后缀操作符
             while True:
-                if self.token.value == '[':  # 数组访问: arr[0]
-                    self.eat('LBRACKET')
+                # 数组访问：nums[0]
+                if self.token.type == '[':
+                    self.eat('[')
                     index_expr = self.expr()
-                    self.eat('RBRACKET')
+                    self.eat(']')
                     var_node = ArrayAccess(var_node, index_expr)
-                elif self.token.type == 'DOT':  # 成员方法调用: arr.push(1)
+                # 成员方法调用：nums.push(4)
+                elif self.token.type == 'DOT':
                     self.eat('DOT')
                     if self.token.type != 'IDENT':
                         raise Exception(f"ParserError: 点号后需要标识符（方法名），但得到了 {self.token}")
                     method_name = self.token.value
                     self.eat('IDENT')
-                    # 如果后面跟着左括号，就是方法调用
-                    if self.token.value == '(':
-                        self.eat('LPAREN')
+                    # 方法调用需要括号
+                    if self.token.type == '(':
+                        self.eat('(')
                         args = []
-                        if self.token.value != ')':
+                        if self.token.type != ')':
                             args.append(self.expr())
                             while self.token.value == ',':
-                                self.eat('COMMA')
+                                self.eat(',')
                                 args.append(self.expr())
-                        self.eat('RPAREN')
+                        self.eat(')')
                         var_node = MemberAccess(var_node, method_name, args)
                     else:
-                        # 暂时只支持方法调用，不支持属性访问
                         raise Exception(f"ParserError: 不支持的成员访问 '.{method_name}'，当前仅支持方法调用")
+                # 普通函数调用：fib(10)
+                elif self.token.type == '(':
+                    self.eat('(')
+                    actual_params = []
+                    if self.token.type != ')':
+                        actual_params.append(self.expr())
+                        while self.token.value == ',':
+                            self.eat(',')
+                            actual_params.append(self.expr())
+                    self.eat(')')
+                    var_node = FunCall(token, actual_params)
                 else:
                     break
             return var_node
-        # 如果不是IDENT，让factor处理其他类型
-        return None
-            
-    def factor(self):
-        token = self.token
-        if token.type in ['INT', 'FLT']:
-            self.eat('ANY')
-            return Num(token)
-        elif token.type == 'BOOL':
-            self.eat('BOOL')
-            return Bool(token)
-        elif token.type == 'STRING':
-            self.eat('STRING')
-            return String(token)
-        elif token.type == '(':
-            self.eat('(')
-            node = self.expr()
-            self.eat(')')
-            return node
-        elif token.type == '[':
-            # 数组字面量: [1, 2, 3]
-            self.eat('[')
-            elements = []
-            # 处理空数组的情况
-            if self.token.type == ']':
-                self.eat(']')
-                return Array(elements)
-            # 解析第一个元素
-            elements.append(self.expr())
-            # 继续解析后面的元素，每个元素前面都有逗号
-            while self.token.type == ',':
-                self.eat(',')
-                # 跳过可能的换行
-                if self.token.type == 'NEWLINE':
-                    self.eat('NEWLINE')
-                elements.append(self.expr())
-            # 现在应该遇到]了
-            self.eat(']')
-            return Array(elements)
-        elif token.value in ['+', '-']:
-            self.eat('OP')
-            node = UnaryOp(op=token, expr=self.factor())  # 只递归调用factor，确保一元运算符只作用于下一个因子，优先级高于四则运算
-            return node
-        elif token.type == 'IDENT':
-            # 调用primary处理变量及其后缀操作符
-            node = self.primary()
-            if node is not None:
-                return node
-        # 检查是否是函数调用
-        if self.token.type == '(':  # 普通函数调用
-            return self.fun_call()
-        else:
-            raise Exception("ParserError: unexpected factor {token}".format(token=self.token))
+        raise Exception("ParserError: unexpected factor {}".format(self.token))
 
     def operator(self):
         token = self.token

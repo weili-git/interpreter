@@ -3,11 +3,25 @@ nums = [1, 2, 3]
 nums[0]
 nums[-1]  # 访问最后一个元素
 
+# 测试push方法
+nums.push(4)
+nums.push(5)
+# 测试len方法
+nums.len()
+# 测试pop方法
+last = nums.pop()
+print(last)
+print(nums.len())
+
 strs = ["hello", "world"]
 strs[1]
 
-# 空数组
+# 空数组测试
 empty = []
+empty.push("first")
+empty.push("second")
+val = empty.pop()
+print(val)
 
 # 这行会报错，类型不一致
 # invalid = [1, "string"]

@@ -310,6 +310,24 @@ class SemanticAnalyzer(NodeVisitor):
         # 检查continue语句是否在循环内部使用
         if not self.in_loop:
             raise Exception("SemanticError: continue语句只能在循环内部使用")
+            
+    def visit_MemberAccess(self, node):
+        # 先检查被访问的对象是否合法
+        self.visit(node.object)
+        # 检查方法名是否受支持
+        supported_methods = ['push', 'pop', 'len']
+        if node.method not in supported_methods:
+            raise Exception(f"SemanticError: 不支持的数组方法 '{node.method}'，支持的方法有: {supported_methods}")
+        # 检查参数数量是否正确
+        if node.method == 'push' and len(node.args) != 1:
+            raise Exception("SemanticError: push()方法需要且仅需要1个参数")
+        if node.method == 'pop' and len(node.args) != 0:
+            raise Exception("SemanticError: pop()方法不需要参数")
+        if node.method == 'len' and len(node.args) != 0:
+            raise Exception("SemanticError: len()方法不需要参数")
+        # 检查所有参数的语义
+        for arg in node.args:
+            self.visit(arg)
 
 
 class CallStack:

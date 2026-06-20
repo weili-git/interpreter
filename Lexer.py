@@ -163,7 +163,6 @@ class Lexer:
         if self.ch == ']':
             self.advance()
             return Token(']', None)
-
         if self.ch == '\n':
             self.advance()
             return Token('NEWLINE', '\n')

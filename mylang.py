@@ -138,7 +138,7 @@ class Interpreter(NodeVisitor):
         for statement in node.statements:
             result = self.visit(statement)
             # 对于独立的表达式（非语句类节点），统一以[表达式]标签输出其值
-            if isinstance(statement, (Var, Num, Bool, String, ArrayAccess, BinOp, UnaryOp)):
+            if isinstance(statement, (Var, Num, Bool, String, ArrayAccess, BinOp, UnaryOp, MemberAccess)):
                 print(f"[表达式] {self.format_val(result)}")
             last_result = result
         return last_result
@@ -318,6 +318,40 @@ class Interpreter(NodeVisitor):
     def visit_Continue(self, node):
         print("[continue语句] 触发continue，准备跳过当前迭代")
         raise ContinueException()
+        
+    def visit_MemberAccess(self, node):
+        # 获取被调用方法的对象（数组）
+        obj = self.visit(node.object)
+        if not isinstance(obj, list):
+            raise Exception(f"RuntimeError: 只有数组才能调用方法，当前对象类型: {type(obj).__name__}")
+            
+        # 处理各个数组方法
+        if node.method == 'push':
+            if len(node.args) != 1:
+                raise Exception(f"RuntimeError: push()需要1个参数，当前传入{len(node.args)}个")
+            value = self.visit(node.args[0])
+            obj.append(value)
+            print(f"[数组方法] push({self.format_val(value)})，数组现在长度: {len(obj)}")
+            return None
+            
+        elif node.method == 'pop':
+            if len(node.args) != 0:
+                raise Exception(f"RuntimeError: pop()不需要参数，当前传入{len(node.args)}个")
+            if len(obj) == 0:
+                raise Exception("RuntimeError: 无法从空数组中pop()元素")
+            value = obj.pop()
+            print(f"[数组方法] pop() = {self.format_val(value)}，数组现在长度: {len(obj)}")
+            return value
+            
+        elif node.method == 'len':
+            if len(node.args) != 0:
+                raise Exception(f"RuntimeError: len()不需要参数，当前传入{len(node.args)}个")
+            length = len(obj)
+            print(f"[数组方法] len() = {length}")
+            return length
+            
+        else:
+            raise Exception(f"RuntimeError: 未知的数组方法 '{node.method}'")
         
     def visit_WhileLoop(self, node):
         print("[循环开始] while循环")
