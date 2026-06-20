@@ -6,6 +6,14 @@ class FunReturn(Exception):
     def __init__(self, value):
         self.value = value
 
+class BreakException(Exception):
+    """用于跳出循环的异常"""
+    pass
+
+class ContinueException(Exception):
+    """用于跳过当前循环迭代的异常"""
+    pass
+
 class Interpreter(NodeVisitor):
     def __init__(self):
         self.call_stack = CallStack()
@@ -288,7 +296,6 @@ class Interpreter(NodeVisitor):
             return None
 
     def visit_Condition(self, node):
-        print("[条件语句开始] if-elif-else")
         result = None
         for i, pair in enumerate(node.pair_list):
             cond_result = self.visit(pair.cond)
@@ -303,21 +310,39 @@ class Interpreter(NodeVisitor):
                 result = self.visit(node.else_block)
         print("[条件语句结束]")
         return result
-
+    
+    def visit_Break(self, node):
+        print("[break语句] 触发break，准备跳出循环")
+        raise BreakException()
+        
+    def visit_Continue(self, node):
+        print("[continue语句] 触发continue，准备跳过当前迭代")
+        raise ContinueException()
+        
     def visit_WhileLoop(self, node):
         print("[循环开始] while循环")
         loop_count = 0
         max_loops = 10000  # 防止无限循环
-        while True:
-            cond_result = self.visit(node.cond)
-            if cond_result in [0, False, None] or loop_count >= max_loops:
-                if loop_count >= max_loops:
-                    print("[循环警告] 达到最大循环次数，强制退出")
-                break
-            print(f"[循环执行] 第{loop_count+1}次迭代")
-            self.visit(node.block)
-            loop_count += 1
-        print(f"[循环结束] 共执行{loop_count}次迭代")
+        try:
+            while True:
+                cond_result = self.visit(node.cond)
+                if cond_result in [0, False, None] or loop_count >= max_loops:
+                    if loop_count >= max_loops:
+                        print("[循环警告] 达到最大循环次数，强制退出")
+                    break
+                print(f"[循环执行] 第{loop_count+1}次迭代")
+                try:
+                    self.visit(node.block)
+                except BreakException:
+                    print("[循环中断] 收到break信号，退出循环")
+                    break
+                except ContinueException:
+                    print("[循环继续] 收到continue信号，开始下一次迭代")
+                    loop_count += 1
+                    continue
+                loop_count += 1
+        finally:
+            print(f"[循环结束] 共执行{loop_count}次迭代")
         return None
 
     def interpret(self, tree):

@@ -20,7 +20,7 @@ class Lexer:
         self.ch = self.text[self.pos]
         self.ln = 1     # line number
         self.col = 1    # column
-        self.keywords = ['def', 'pure', 'return', 'end', 'if', 'then', 'elif', 'else', 'while', 'true', 'false', 'and', 'or', 'not']
+        self.keywords = ['def', 'pure', 'return', 'end', 'if', 'elif', 'else', 'while', 'break', 'continue', 'true', 'false', 'and', 'or', 'not']
         self.operators = ['+', '-', '*', '/', '//', '**', '=', '+=', '-=', '*=', '/=', '//=', '==', '!=', '<', '>', '<=', '>=', ';', ':', '||', '&&', '!']
 
     def advance(self):  # eat one character
@@ -133,6 +133,9 @@ class Lexer:
         if self.ch == '"':
             return self.string()
 
+        if self.ch == '.':
+            self.advance()
+            return Token('DOT', '.')
         if self.ch in self.operators:
             ch = self.ch
             next = self.peek()
@@ -166,10 +169,3 @@ class Lexer:
             return Token('NEWLINE', '\n')
 
         raise Exception('LexerError: unexpected token on line:{} col:{}'.format(self.ln, self.col))
-
-
-# lex = Lexer('1+$"+1"\n2+2')
-# token = lex.next_token()
-# while token.type != 'EOF':
-#     print(token)
-#     token = lex.next_token()

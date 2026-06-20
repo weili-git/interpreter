@@ -1,10 +1,8 @@
 pure fib(n)
-    if n <= 1 then
+    if n <= 1
         n
     else
-        a = fib(n-1)
-        b = fib(n-2)
-        a + b
+        fib(n-1) + fib(n-2)
     end
 end
 

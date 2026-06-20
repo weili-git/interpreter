@@ -106,6 +106,20 @@ class WhileLoop(AST):
         self.cond = cond
         self.block = block
 
+class Break(AST):
+    def __init__(self):
+        pass
+
+class Continue(AST):
+    def __init__(self):
+        pass
+
+class MemberAccess(AST):
+    def __init__(self, obj, method, args):
+        self.object = obj      # 被访问的对象（数组变量）
+        self.method = method   # 方法名（push/pop等）
+        self.args = args       # 方法调用的参数列表
+
 class Array(AST):
     def __init__(self, elements):
         self.elements = elements
@@ -143,7 +157,6 @@ class Parser:
             # 处理完空行后再次检查结束标记，避免处理完空行后才遇到结束标记仍进入解析
             if self.token.type in end:
                 break
-            print(f"[DEBUG block] ln:{self.lex.ln} 当前token:{self.token}, 结束标记:{end}")
             # 再次检查，防止在处理空行的过程中token发生变化，现在如果是结束标记，直接break
             if self.token.type in end:
                 break
@@ -176,12 +189,6 @@ class Parser:
             else:
                 # 没有赋值符号，就是普通的表达式
                 return expr_node
-            peek_token = self.lex.peek_token()
-            if peek_token.value in ['=', '+=', '-=', '*=', '/=', '//=']:
-                return self.assignment()
-            elif peek_token.type == '(':
-                return self.fun_call()
-            return self.expr()
         elif self.token.type in ['INT', 'FLT', 'STRING', 'BOOL']: # constant
             return self.expr()
         elif self.token.type == 'DEF' or self.token.type == 'PURE':
@@ -193,6 +200,10 @@ class Parser:
             return self.while_statement()
         elif self.token.type == "RETURN":
             return self.return_statement()
+        elif self.token.type == "BREAK":
+            return self.break_statement()
+        elif self.token.type == "CONTINUE":
+            return self.continue_statement()
         else:
             return self.empty()
 
@@ -253,35 +264,36 @@ class Parser:
         self.eat('IF')
         pair_list = []
         
-        # 处理if块
+        # 处理if块: if condition NEWLINE block ... END
         cond = self.expr()
-        if self.token.type in ['THEN', 'NEWLINE'] or self.token.value == ';':
+        # 条件后必须是换行符或分号
+        if self.token.type in ['NEWLINE'] or self.token.value == ';':
             self.eat('ANY')
         else:
-            raise Exception('ParserError: expected THEN, NEWLINE or ;, got {}'.format(self.token))
+            raise Exception('ParserError: expected NEWLINE or ; after if condition, got {}'.format(self.token))
         # if块的结束标记是ELIF、ELSE或END
         block = self.block(end=['ELIF', 'ELSE', 'END'])
         pair_list.append(CondPair(cond, block))
         
-        # 处理所有elif块
+        # 处理所有elif块: elif condition NEWLINE block ... END
         while self.token.type == 'ELIF':
             self.eat('ELIF')
             cond = self.expr()
-            if self.token.type in ['THEN', 'NEWLINE'] or self.token.value == ';':
+            if self.token.type in ['NEWLINE'] or self.token.value == ';':
                 self.eat('ANY')
             else:
-                raise Exception('ParserError: expected THEN, NEWLINE or ;, got {}'.format(self.token))
+                raise Exception('ParserError: expected NEWLINE or ; after elif condition, got {}'.format(self.token))
             block = self.block(end=['ELIF', 'ELSE', 'END'])
             pair_list.append(CondPair(cond, block))
         
-        # 处理else块
+        # 处理else块: else NEWLINE block ... END
         else_block = None
         if self.token.type == 'ELSE':
             self.eat('ELSE')
-            if self.token.type in ['THEN', 'NEWLINE'] or self.token.value == ';':
+            if self.token.type in ['NEWLINE'] or self.token.value == ';':
                 self.eat('ANY')
             else:
-                raise Exception('ParserError: expected THEN, NEWLINE or ;, got {}'.format(self.token))
+                raise Exception('ParserError: expected NEWLINE or ; after else, got {}'.format(self.token))
             else_block = self.block(end=['END'])
         
         # 最后消费END
@@ -306,6 +318,14 @@ class Parser:
         self.eat('RETURN')
         expr = self.expr()
         return FunReturn(expr)
+        
+    def break_statement(self):
+        self.eat('BREAK')
+        return Break()
+        
+    def continue_statement(self):
+        self.eat('CONTINUE')
+        return Continue()
 
     def cond_pair(self):
         cond = self.expr()
@@ -327,6 +347,47 @@ class Parser:
             node = BinOp(left=node, op=op, right=self.factor())
         return node
 
+    def primary(self):
+        """primary处理变量、数组访问、成员方法调用等基础表达式
+        IDENTIFIER -> 检查是否有[索引]或者.方法()
+        """
+        token = self.token
+        if token.type == 'IDENT':
+            var_node = Var(token)
+            self.eat('IDENT')
+            # 循环处理后缀操作符：支持连续的数组访问和方法调用
+            while True:
+                if self.token.value == '[':  # 数组访问: arr[0]
+                    self.eat('LBRACKET')
+                    index_expr = self.expr()
+                    self.eat('RBRACKET')
+                    var_node = ArrayAccess(var_node, index_expr)
+                elif self.token.type == 'DOT':  # 成员方法调用: arr.push(1)
+                    self.eat('DOT')
+                    if self.token.type != 'IDENT':
+                        raise Exception(f"ParserError: 点号后需要标识符（方法名），但得到了 {self.token}")
+                    method_name = self.token.value
+                    self.eat('IDENT')
+                    # 如果后面跟着左括号，就是方法调用
+                    if self.token.value == '(':
+                        self.eat('LPAREN')
+                        args = []
+                        if self.token.value != ')':
+                            args.append(self.expr())
+                            while self.token.value == ',':
+                                self.eat('COMMA')
+                                args.append(self.expr())
+                        self.eat('RPAREN')
+                        var_node = MemberAccess(var_node, method_name, args)
+                    else:
+                        # 暂时只支持方法调用，不支持属性访问
+                        raise Exception(f"ParserError: 不支持的成员访问 '.{method_name}'，当前仅支持方法调用")
+                else:
+                    break
+            return var_node
+        # 如果不是IDENT，让factor处理其他类型
+        return None
+            
     def factor(self):
         token = self.token
         if token.type in ['INT', 'FLT']:
@@ -368,16 +429,13 @@ class Parser:
             node = UnaryOp(op=token, expr=self.factor())  # 只递归调用factor，确保一元运算符只作用于下一个因子，优先级高于四则运算
             return node
         elif token.type == 'IDENT':
-            next_token = self.lex.peek_token()
-            if next_token.type == '(':
-                return self.fun_call()
-            elif next_token.type == '[':  # 数组访问: arr[0]
-                array_node = self.variable()
-                self.eat('[')
-                index_node = self.expr()
-                self.eat(']')
-                return ArrayAccess(array_node, index_node)
-            return self.variable()
+            # 调用primary处理变量及其后缀操作符
+            node = self.primary()
+            if node is not None:
+                return node
+        # 检查是否是函数调用
+        if self.token.type == '(':  # 普通函数调用
+            return self.fun_call()
         else:
             raise Exception("ParserError: unexpected factor {token}".format(token=self.token))
 

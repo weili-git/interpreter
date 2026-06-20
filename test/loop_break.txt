@@ -1,0 +1,8 @@
+# 测试break语句功能
+i = 0
+while i < 8
+    i = i + 1
+    if i == 5
+        break
+    end
+end

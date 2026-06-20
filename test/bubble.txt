@@ -10,7 +10,7 @@ while swapped
     swapped = 0
     i = 0
     while i < n - 1
-        if arr[i] > arr[i+1] then
+        if arr[i] > arr[i+1]
             # 交换元素
             temp = arr[i]
             arr[i] = arr[i+1]

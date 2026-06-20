@@ -113,7 +113,6 @@ class ScopedSymbolTable(object):
     __repr__ = __str__
 
     def insert(self, symbol):
-        print('Insert: %s' % symbol.name)
         if symbol.name in self._symbols.keys():
             # 同一作用域内不允许任何重复名称，无论是变量还是函数
             existing = self._symbols[symbol.name]
@@ -121,7 +120,6 @@ class ScopedSymbolTable(object):
         self._symbols[symbol.name] = symbol
 
     def lookup(self, name):
-        print('Lookup: %s. (Scope name: %s)' % (name, self.scope_name))
         # 'symbol' is either an instance of the Symbol class or None
         symbol = self._symbols.get(name)
 
@@ -140,9 +138,9 @@ class SemanticAnalyzer(NodeVisitor):
             declaration checking, argument checking, (type checking)
         """
         self.current_scope = None
+        self.in_loop = False  # 标记是否在循环内部，用于检查break/continue的合法性
 
     def visit_Program(self, node):
-        print('ENTER scope: global')
         global_scope = ScopedSymbolTable(
             scope_name='global',
             scope_level=1,
@@ -152,19 +150,23 @@ class SemanticAnalyzer(NodeVisitor):
 
         self.visit(node.block)
 
-        print(global_scope)
         self.current_scope = self.current_scope.enclosing_scope
-        print('LEAVE scope: global')
 
     def visit_Block(self, node):
         for statement in node.statements:
             self.visit(statement)
 
     def visit_WhileLoop(self, node):
+        # 保存之前的循环状态
+        prev_in_loop = self.in_loop
+        # 进入循环，设置in_loop为True
+        self.in_loop = True
         # 检查循环条件的语义
         self.visit(node.cond)
         # 检查循环体的语义
         self.visit(node.block)
+        # 恢复之前的循环状态
+        self.in_loop = prev_in_loop
 
     def visit_BinOp(self, node):
         self.visit(node.left)
@@ -251,7 +253,6 @@ class SemanticAnalyzer(NodeVisitor):
         proc_symbol.is_pure = getattr(node, 'is_pure', False)
         self.current_scope.insert(proc_symbol)
 
-        print('ENTER scope: %s' % proc_name)
         # Scope for parameters and local variables
         procedure_scope = ScopedSymbolTable(
             scope_name=proc_name,
@@ -269,9 +270,7 @@ class SemanticAnalyzer(NodeVisitor):
 
         self.visit(node.block)
 
-        print(procedure_scope)
         self.current_scope = self.current_scope.enclosing_scope
-        print('LEAVE scope: %s' % proc_name)
 
     def visit_FunCall(self, node):
         for param in node.actual_params:
@@ -301,6 +300,16 @@ class SemanticAnalyzer(NodeVisitor):
             self.visit(pair)
         if node.else_block:
             self.visit(node.else_block)
+            
+    def visit_Break(self, node):
+        # 检查break语句是否在循环内部使用
+        if not self.in_loop:
+            raise Exception("SemanticError: break语句只能在循环内部使用")
+            
+    def visit_Continue(self, node):
+        # 检查continue语句是否在循环内部使用
+        if not self.in_loop:
+            raise Exception("SemanticError: continue语句只能在循环内部使用")
 
 
 class CallStack:
